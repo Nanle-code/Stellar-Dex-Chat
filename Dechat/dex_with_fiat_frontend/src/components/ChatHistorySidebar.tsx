@@ -1,7 +1,6 @@
 'use client';
 
 import { useState, useEffect, useRef, useCallback } from 'react';
-import jsPDF from 'jspdf';
 import { useChatHistory } from '@/hooks/useChatHistory';
 import { useTxHistory } from '@/hooks/useTxHistory';
 import { useStellarWallet } from '@/contexts/StellarWalletContext';
@@ -507,7 +506,8 @@ export default function ChatHistorySidebar({
     }
   };
 
-  const handleExportTransactions = () => {
+  const handleExportTransactions = async () => {
+    const { jsPDF } = await import('jspdf');
     const doc = new jsPDF();
     const exportedAt = new Date();
     const walletAddress = connection.address || 'Wallet not connected';

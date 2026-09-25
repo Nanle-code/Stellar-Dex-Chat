@@ -27,6 +27,18 @@ vi.mock('@/lib/stellarContract', () => ({
   pollTransaction: vi.fn(),
   stroopsToDisplay: (stroops: bigint) => String(Number(stroops) / 1e7),
   BRIDGE_LIMIT_WARNING_PERCENT: 0.9,
+  simulateDeposit: vi.fn().mockResolvedValue({
+    baseFee: 0.00001,
+    resourceFee: 0,
+    fee: 0.00001,
+    minFee: '100',
+  }),
+  simulateWithdraw: vi.fn().mockResolvedValue({
+    baseFee: 0.00001,
+    resourceFee: 0,
+    fee: 0.00001,
+    minFee: '100',
+  }),
 }));
 
 vi.mock('@/contexts/UserPreferencesContext', () => ({
@@ -259,5 +271,95 @@ describe('StellarFiatModal skeleton loading state', () => {
     // Check that modal has theme classes
     const modal = container.querySelector('[role="dialog"]');
     expect(modal?.className).toMatch(/theme-/);
+  });
+});
+
+describe('StellarFiatModal fee simulation debounce', () => {
+  beforeEach(() => {
+    vi.useFakeTimers();
+    onClose.mockReset();
+    onDepositSuccess.mockReset();
+  });
+
+  afterEach(() => {
+    vi.useRealTimers();
+  });
+
+  it('debounces fee simulation when typing multi-character amount', async () => {
+    const mockedContract = await import('@/lib/stellarContract');
+    mockedContract.simulateDeposit.mockClear();
+
+    const { getByRole } = render(
+      React.createElement(StellarFiatModal, {
+        isOpen: true,
+        onClose,
+        defaultAmount: '1',
+      }),
+    );
+
+    // Wait for initial render
+    await vi.runAllTimersAsync();
+
+    // Simulate typing "1000.5" character by character
+    const input = getByRole('spinbutton') as HTMLInputElement;
+    
+    // Type '0' -> "10"
+    fireEvent.change(input, { target: { value: '10' } });
+    await vi.advanceTimersByTimeAsync(100);
+    
+    // Type '0' -> "100"
+    fireEvent.change(input, { target: { value: '100' } });
+    await vi.advanceTimersByTimeAsync(100);
+    
+    // Type '0' -> "1000"
+    fireEvent.change(input, { target: { value: '1000' } });
+    await vi.advanceTimersByTimeAsync(100);
+    
+    // Type '.' -> "1000."
+    fireEvent.change(input, { target: { value: '1000.' } });
+    await vi.advanceTimersByTimeAsync(100);
+    
+    // Type '5' -> "1000.5"
+    fireEvent.change(input, { target: { value: '1000.5' } });
+    
+    // Advance past the debounce delay (300ms)
+    await vi.advanceTimersByTimeAsync(350);
+
+    // simulateDeposit should have been called exactly once (for the final value)
+    expect(mockedContract.simulateDeposit).toHaveBeenCalledTimes(1);
+  });
+
+  it('cancels in-flight simulation when amount changes', async () => {
+    const mockedContract = await import('@/lib/stellarContract');
+    mockedContract.simulateDeposit.mockClear();
+
+    const { getByRole } = render(
+      React.createElement(StellarFiatModal, {
+        isOpen: true,
+        onClose,
+        defaultAmount: '10',
+      }),
+    );
+
+    await vi.runAllTimersAsync();
+
+    const input = getByRole('spinbutton') as HTMLInputElement;
+    
+    // Change amount to trigger first simulation
+    fireEvent.change(input, { target: { value: '20' } });
+    await vi.advanceTimersByTimeAsync(100);
+    
+    // Change amount again before debounce fires
+    fireEvent.change(input, { target: { value: '30' } });
+    await vi.advanceTimersByTimeAsync(100);
+    
+    // Change amount again
+    fireEvent.change(input, { target: { value: '40' } });
+    
+    // Advance past the debounce delay
+    await vi.advanceTimersByTimeAsync(350);
+
+    // Should only have been called once for the final value
+    expect(mockedContract.simulateDeposit).toHaveBeenCalledTimes(1);
   });
 });
